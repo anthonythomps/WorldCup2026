@@ -187,7 +187,6 @@ def build_dashboard_snapshot(
     upcoming = upcoming_matches(matches, upcoming_fixture_days)
     people = rank_people(all_records, draw)
     movements, movement_context = leaderboard_movements(matches, draw, people)
-    add_current_games_to_played(people, current, draw)
 
     return {
         "matches": matches,
@@ -359,24 +358,6 @@ def leaderboard_movements(
             movements[person.name] = "→"
 
     return movements, format_match_context(latest_match)
-
-
-def add_current_games_to_played(
-    people: list[Any],
-    matches: list[Any],
-    draw: dict[str, list[str]],
-) -> None:
-    owner_lookup = build_owner_lookup(draw)
-    counts = {person.name: 0 for person in people}
-
-    for match in matches:
-        for team in (match.home_team, match.away_team):
-            owner = owner_lookup.get(canonical_team_name(team))
-            if owner in counts:
-                counts[owner] += 1
-
-    for person in people:
-        person.played += counts.get(person.name, 0)
 
 
 def team_with_owner(team: str, owner_lookup: dict[str, str]) -> str:
