@@ -35,6 +35,13 @@ class Match:
             "cancelled",
             "canceled",
             "abandoned",
+            "live",
+            "in progress",
+            "in_progress",
+            "1h",
+            "2h",
+            "ht",
+            "half-time",
         }
         return status not in unplayed_statuses
 

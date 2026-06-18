@@ -2,6 +2,7 @@ year: 2026
 refresh_interval_seconds: 600
 browser_autorefresh: true
 upcoming_fixture_days: 4
+current_match_window_hours: 3
 
 api:
   base_url: "https://api.zafronix.com/fifa/worldcup/v1"

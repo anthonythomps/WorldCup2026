@@ -161,12 +161,13 @@ def ensure_cache(
     }
 
 
-@st.cache_data(ttl=600, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def build_dashboard_snapshot(
     matches_payload_json: str,
     standings_payload_json: str,
     draw_json: str,
     upcoming_fixture_days: int,
+    current_match_window_hours: int,
 ) -> dict[str, Any]:
     matches_payload = json.loads(matches_payload_json)
     standings_payload = json.loads(standings_payload_json)
@@ -182,12 +183,15 @@ def build_dashboard_snapshot(
     if standings_records and not any(record.played for record in all_records):
         all_records = standings_records
 
+    current = current_matches(matches, current_match_window_hours)
     upcoming = upcoming_matches(matches, upcoming_fixture_days)
     people = rank_people(all_records, draw)
     movements, movement_context = leaderboard_movements(matches, draw, people)
+    add_current_games_to_played(people, current, draw)
 
     return {
         "matches": matches,
+        "current_matches": current,
         "upcoming_matches": upcoming,
         "all_records": all_records,
         "group_records": group_records,
@@ -285,6 +289,29 @@ def upcoming_matches(matches: list[Any], days: int) -> list[Any]:
     return fixtures
 
 
+def current_matches(matches: list[Any], window_hours: int) -> list[Any]:
+    now = datetime.now(timezone.utc)
+    current = []
+    window = timedelta(hours=max(1, window_hours))
+
+    for match in matches:
+        if match.played:
+            continue
+
+        status = (match.status or "").strip().lower()
+        kickoff = parse_match_datetime(match)
+        kickoff_utc = kickoff.astimezone(timezone.utc) if kickoff else None
+
+        is_live_status = status in {"live", "in progress", "in_progress", "1h", "2h", "ht", "half-time"}
+        is_inside_window = bool(kickoff_utc and kickoff_utc <= now <= kickoff_utc + window)
+
+        if is_live_status or is_inside_window:
+            current.append(match)
+
+    current.sort(key=lambda match: parse_match_datetime(match) or datetime.max.replace(tzinfo=timezone.utc))
+    return current
+
+
 def completed_matches(matches: list[Any]) -> list[Any]:
     fallback = datetime.min.replace(tzinfo=timezone.utc)
     results = [match for match in matches if match.played]
@@ -334,6 +361,24 @@ def leaderboard_movements(
     return movements, format_match_context(latest_match)
 
 
+def add_current_games_to_played(
+    people: list[Any],
+    matches: list[Any],
+    draw: dict[str, list[str]],
+) -> None:
+    owner_lookup = build_owner_lookup(draw)
+    counts = {person.name: 0 for person in people}
+
+    for match in matches:
+        for team in (match.home_team, match.away_team):
+            owner = owner_lookup.get(canonical_team_name(team))
+            if owner in counts:
+                counts[owner] += 1
+
+    for person in people:
+        person.played += counts.get(person.name, 0)
+
+
 def team_with_owner(team: str, owner_lookup: dict[str, str]) -> str:
     owner = owner_lookup.get(canonical_team_name(team))
     return f"{team} ({owner})" if owner else team
@@ -355,6 +400,37 @@ def fixtures_dataframe(matches: list[Any], draw: dict[str, list[str]]) -> pd.Dat
                 "Venue": match.raw.get("stadium", "") if isinstance(match.raw, dict) else "",
                 "City": match.raw.get("city", "") if isinstance(match.raw, dict) else "",
                 "Status": match.status or "",
+                "Stage": match.stage or "",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def current_games_dataframe(matches: list[Any], draw: dict[str, list[str]]) -> pd.DataFrame:
+    owner_lookup = build_owner_lookup(draw)
+    rows = []
+    for match in matches:
+        kickoff = parse_match_datetime(match)
+        kickoff_display = (
+            kickoff.astimezone().strftime("%a %d %b, %H:%M %Z") if kickoff else match.kickoff or ""
+        )
+        phase = match.raw.get("livePhase", "") if isinstance(match.raw, dict) else ""
+        status = (match.status or "in progress").title()
+        status_display = f"{status} {phase}".strip()
+        score = (
+            f"{match.home_score}-{match.away_score}"
+            if match.home_score is not None and match.away_score is not None
+            else ""
+        )
+        rows.append(
+            {
+                "Kickoff": kickoff_display,
+                "Home": team_with_owner(match.home_team, owner_lookup),
+                "Score": score,
+                "Away": team_with_owner(match.away_team, owner_lookup),
+                "Venue": match.raw.get("stadium", "") if isinstance(match.raw, dict) else "",
+                "City": match.raw.get("city", "") if isinstance(match.raw, dict) else "",
+                "Status": status_display,
                 "Stage": match.stage or "",
             }
         )
@@ -386,6 +462,7 @@ def main() -> None:
     year = int(config.get("year", 2026))
     refresh_interval_seconds = int(config.get("refresh_interval_seconds", 600))
     upcoming_fixture_days = int(config.get("upcoming_fixture_days", 4))
+    current_match_window_hours = int(config.get("current_match_window_hours", 3))
     base_url = (config.get("api") or {}).get("base_url", DEFAULT_BASE_URL)
     api_key = get_api_key()
 
@@ -394,6 +471,7 @@ def main() -> None:
         year = st.number_input("Tournament year", min_value=1930, max_value=2100, value=year, step=4)
         st.caption(f"Cache refresh interval: {refresh_interval_seconds // 60} minutes")
         st.caption(f"Upcoming fixtures window: {upcoming_fixture_days} days")
+        st.caption(f"Current match window: {current_match_window_hours} hours")
         manual_refresh = st.button("Refresh now", type="primary", use_container_width=True)
 
         st.divider()
@@ -448,6 +526,7 @@ def main() -> None:
         safe_json(data.get("standings")),
         safe_json(draw),
         upcoming_fixture_days,
+        current_match_window_hours,
     )
 
     worst = snapshot["worst_teams"][0] if snapshot["worst_teams"] else None
@@ -479,6 +558,11 @@ def main() -> None:
         hide_index=True,
         height=leaderboard_height,
     )
+
+    current = snapshot["current_matches"]
+    if current:
+        st.subheader("Current Games")
+        st.dataframe(current_games_dataframe(current, draw), use_container_width=True, hide_index=True)
 
     st.subheader(f"Upcoming Fixtures - Next {upcoming_fixture_days} Days")
     fixtures = snapshot["upcoming_matches"]
