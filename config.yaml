@@ -1,0 +1,69 @@
+year: 2026
+refresh_interval_seconds: 600
+browser_autorefresh: true
+upcoming_fixture_days: 4
+
+api:
+  base_url: "https://api.zafronix.com/fifa/worldcup/v1"
+
+sweepstake:
+  Matt:
+    - Jordan
+    - Norway
+    - Senegal
+    - Netherlands
+  Nick:
+    - Curaçao
+    - Scotland
+    - Switzerland
+    - England
+  Anil:
+    - Ghana
+    - Panama
+    - Mexico
+    - Portugal
+  Jay:
+    - Bosnia and Herzegovina
+    - Tunisia
+    - Japan
+    - Brazil
+  Ben:
+    - Cabo Verde
+    - Paraguay
+    - Canada
+    - Croatia
+  Jimmy:
+    - New Zealand
+    - Côte d'Ivoire
+    - USA
+    - France
+  Daniel:
+    - Saudi Arabia
+    - Congo DR
+    - Uruguay
+    - Colombia
+  Micky:
+    - Haiti
+    - Czechia
+    - IR Iran
+    - Spain
+  Pabs:
+    - South Africa
+    - Australia
+    - Ecuador
+    - Argentina
+  Noods:
+    - Uzbekistan
+    - Sweden
+    - Austria
+    - Morocco
+  Rich:
+    - Qatar
+    - Algeria
+    - Türkiye
+    - Germany
+  Ant:
+    - Iraq
+    - Egypt
+    - Korea Republic
+    - Belgium
