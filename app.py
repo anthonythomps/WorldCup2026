@@ -226,12 +226,12 @@ def people_dataframe(people: list[Any]) -> pd.DataFrame:
             {
                 "Rank": index,
                 "Person": person.name,
-                "Teams": ", ".join(person.teams),
                 "Played": person.played,
                 "Points": person.points,
                 "Goal Difference": person.goal_difference,
                 "Goals For": person.goals_for,
                 "Goals Against": person.goals_against,
+                "Teams": ", ".join(person.teams),
             }
         )
     return pd.DataFrame(rows)
@@ -295,12 +295,12 @@ def fixtures_dataframe(matches: list[Any], draw: dict[str, list[str]]) -> pd.Dat
         rows.append(
             {
                 "Kickoff": kickoff_display,
-                "Stage": match.stage or "",
                 "Home": team_with_owner(match.home_team, owner_lookup),
                 "Away": team_with_owner(match.away_team, owner_lookup),
                 "Venue": match.raw.get("stadium", "") if isinstance(match.raw, dict) else "",
                 "City": match.raw.get("city", "") if isinstance(match.raw, dict) else "",
                 "Status": match.status or "",
+                "Stage": match.stage or "",
             }
         )
     return pd.DataFrame(rows)
