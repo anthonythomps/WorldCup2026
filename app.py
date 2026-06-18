@@ -183,6 +183,8 @@ def build_dashboard_snapshot(
         all_records = standings_records
 
     upcoming = upcoming_matches(matches, upcoming_fixture_days)
+    people = rank_people(all_records, draw)
+    movements, movement_context = leaderboard_movements(matches, draw, people)
 
     return {
         "matches": matches,
@@ -190,7 +192,9 @@ def build_dashboard_snapshot(
         "all_records": all_records,
         "group_records": group_records,
         "worst_teams": rank_worst_teams(group_records),
-        "people": rank_people(all_records, draw),
+        "people": people,
+        "people_movements": movements,
+        "movement_context": movement_context,
     }
 
 
@@ -219,12 +223,14 @@ def format_record_meta(record: Any) -> str:
     )
 
 
-def people_dataframe(people: list[Any]) -> pd.DataFrame:
+def people_dataframe(people: list[Any], movements: dict[str, str] | None = None) -> pd.DataFrame:
+    movements = movements or {}
     rows = []
     for index, person in enumerate(people, start=1):
         rows.append(
             {
                 "Rank": index,
+                "Move": movements.get(person.name, ""),
                 "Person": person.name,
                 "Played": person.played,
                 "Points": person.points,
@@ -277,6 +283,55 @@ def upcoming_matches(matches: list[Any], days: int) -> list[Any]:
 
     fixtures.sort(key=lambda match: parse_match_datetime(match) or datetime.max.replace(tzinfo=timezone.utc))
     return fixtures
+
+
+def completed_matches(matches: list[Any]) -> list[Any]:
+    fallback = datetime.min.replace(tzinfo=timezone.utc)
+    results = [match for match in matches if match.played]
+    results.sort(key=lambda match: parse_match_datetime(match) or fallback)
+    return results
+
+
+def format_match_context(match: Any) -> str:
+    kickoff = parse_match_datetime(match)
+    kickoff_display = kickoff.astimezone().strftime("%d %b, %H:%M") if kickoff else "latest match"
+    return (
+        f"Movement is versus the table before {match.home_team} "
+        f"{match.home_score}-{match.away_score} {match.away_team} ({kickoff_display})."
+    )
+
+
+def leaderboard_movements(
+    matches: list[Any],
+    draw: dict[str, list[str]],
+    current_people: list[Any],
+) -> tuple[dict[str, str], str | None]:
+    results = completed_matches(matches)
+    if not results:
+        return {}, None
+
+    latest_match = results[-1]
+    previous_matches = [match for match in matches if match is not latest_match]
+    previous_records = compute_team_records(previous_matches, draw, group_stage_only=False)
+    previous_people = rank_people(previous_records, draw)
+    previous_ranks = {person.name: index for index, person in enumerate(previous_people, start=1)}
+
+    movements: dict[str, str] = {}
+    for current_rank, person in enumerate(current_people, start=1):
+        previous_rank = previous_ranks.get(person.name)
+        if previous_rank is None:
+            movements[person.name] = ""
+            continue
+
+        delta = previous_rank - current_rank
+        if delta > 0:
+            movements[person.name] = f"↑ {delta}"
+        elif delta < 0:
+            movements[person.name] = f"↓ {abs(delta)}"
+        else:
+            movements[person.name] = "→"
+
+    return movements, format_match_context(latest_match)
 
 
 def team_with_owner(team: str, owner_lookup: dict[str, str]) -> str:
@@ -415,9 +470,11 @@ def main() -> None:
             render_card("Best Combined Record", "No draw configured", "Add teams to config.yaml")
 
     st.subheader("People Leaderboard")
+    if snapshot["movement_context"]:
+        st.caption(snapshot["movement_context"])
     leaderboard_height = min(720, 42 + (len(snapshot["people"]) + 1) * 35)
     st.dataframe(
-        people_dataframe(snapshot["people"]),
+        people_dataframe(snapshot["people"], snapshot["people_movements"]),
         use_container_width=True,
         hide_index=True,
         height=leaderboard_height,
