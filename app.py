@@ -234,9 +234,9 @@ def people_dataframe(people: list[Any], movements: dict[str, str] | None = None)
                 "Person": person.name,
                 "Played": person.played,
                 "Points": person.points,
-                "Goal Difference": person.goal_difference,
-                "Goals For": person.goals_for,
-                "Goals Against": person.goals_against,
+                "GD": person.goal_difference,
+                "GF": person.goals_for,
+                "GA": person.goals_against,
                 "Teams": ", ".join(person.teams),
             }
         )
