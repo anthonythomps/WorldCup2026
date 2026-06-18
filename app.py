@@ -18,7 +18,6 @@ from scoring import (
     canonical_team_name,
     compute_team_records,
     normalise_matches,
-    rank_best_teams,
     rank_people,
     rank_worst_teams,
     records_from_standings,
@@ -191,7 +190,6 @@ def build_dashboard_snapshot(
         "all_records": all_records,
         "group_records": group_records,
         "worst_teams": rank_worst_teams(group_records),
-        "best_teams": rank_best_teams(all_records),
         "people": rank_people(all_records, draw),
     }
 
@@ -398,21 +396,15 @@ def main() -> None:
     )
 
     worst = snapshot["worst_teams"][0] if snapshot["worst_teams"] else None
-    best = snapshot["best_teams"][0] if snapshot["best_teams"] else None
     best_person = snapshot["people"][0] if snapshot["people"] else None
 
-    card_1, card_2, card_3 = st.columns(3)
+    card_1, card_2 = st.columns(2)
     with card_1:
         if worst:
             render_card("Worst Team", worst.name, format_record_meta(worst))
         else:
             render_card("Worst Team", "No results yet", "Waiting for completed group-stage games")
     with card_2:
-        if best:
-            render_card("Overall Winner", best.name, format_record_meta(best))
-        else:
-            render_card("Overall Winner", "No results yet", "Waiting for completed games")
-    with card_3:
         if best_person:
             meta = (
                 f"{best_person.points} pts | GD {best_person.goal_difference:+d} | "
