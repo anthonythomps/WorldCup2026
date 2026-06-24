@@ -81,6 +81,15 @@ def inject_css() -> None:
             background: #f8fafc;
             font-size: 0.82rem;
         }
+        .rank-line + .rank-line {
+            border-top: 1px solid #edf1f5;
+            margin-top: 8px;
+            padding-top: 8px;
+        }
+        .rank-line__team {
+            color: #111827;
+            font-weight: 750;
+        }
         div[data-testid="stMetricValue"] {
             font-size: 1.45rem;
         }
@@ -218,12 +227,19 @@ def render_card(label: str, title: str, meta: str) -> None:
     )
 
 
-def format_record_meta(record: Any) -> str:
-    owner = html.escape(record.owner or "Unassigned")
-    return (
-        f"<span class=\"status-pill\">{owner}</span><br>"
-        f"{record.points} pts | GD {record.goal_difference:+d} | GF {record.goals_for}"
-    )
+def format_worst_teams_meta(records: list[Any]) -> str:
+    rows = []
+    for index, record in enumerate(records[:3], start=1):
+        owner = html.escape(record.owner or "Unassigned")
+        team = html.escape(record.name)
+        rows.append(
+            "<div class=\"rank-line\">"
+            f"<span class=\"rank-line__team\">{index}. {team}</span> "
+            f"<span class=\"status-pill\">{owner}</span><br>"
+            f"{record.points} pts | GD {record.goal_difference:+d} | GF {record.goals_for}"
+            "</div>"
+        )
+    return "".join(rows)
 
 
 def people_dataframe(people: list[Any], movements: dict[str, str] | None = None) -> pd.DataFrame:
@@ -510,13 +526,13 @@ def main() -> None:
         current_match_window_hours,
     )
 
-    worst = snapshot["worst_teams"][0] if snapshot["worst_teams"] else None
+    worst_teams = snapshot["worst_teams"][:3]
     best_person = snapshot["people"][0] if snapshot["people"] else None
 
     card_1, card_2 = st.columns(2)
     with card_1:
-        if worst:
-            render_card("Worst Team", worst.name, format_record_meta(worst))
+        if worst_teams:
+            render_card("Worst Team", "Bottom 3", format_worst_teams_meta(worst_teams))
         else:
             render_card("Worst Team", "No results yet", "Waiting for completed group-stage games")
     with card_2:
