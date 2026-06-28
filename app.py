@@ -45,33 +45,6 @@ def inject_css() -> None:
             padding-top: 1.4rem;
             padding-bottom: 2rem;
         }
-        .sweep-card {
-            border: 1px solid #dde3ea;
-            border-radius: 8px;
-            padding: 16px 18px;
-            background: #ffffff;
-            min-height: 138px;
-        }
-        .sweep-card__label {
-            color: #52606d;
-            font-size: 0.78rem;
-            font-weight: 700;
-            letter-spacing: 0;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-        }
-        .sweep-card__title {
-            color: #111827;
-            font-size: 1.45rem;
-            line-height: 1.2;
-            font-weight: 750;
-            margin-bottom: 8px;
-        }
-        .sweep-card__meta {
-            color: #3f4d5a;
-            font-size: 0.95rem;
-            line-height: 1.45;
-        }
         .status-pill {
             display: inline-block;
             border: 1px solid #d5dde5;
@@ -81,34 +54,26 @@ def inject_css() -> None:
             background: #f8fafc;
             font-size: 0.82rem;
         }
-        .rank-line + .rank-line {
-            border-top: 1px solid #edf1f5;
-            margin-top: 8px;
-            padding-top: 8px;
-        }
-        .rank-line__team {
-            color: #111827;
-            font-weight: 750;
-        }
         .bracket-scroll {
             overflow-x: auto;
             padding-bottom: 8px;
         }
         .bracket-grid {
             display: grid;
-            grid-template-columns: repeat(6, minmax(210px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 12px;
-            min-width: 1320px;
+            min-width: 720px;
         }
         .bracket-round {
-            display: flex;
-            flex-direction: column;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 10px;
         }
         .bracket-round__title {
             color: #475569;
             font-size: 0.86rem;
             font-weight: 750;
+            grid-column: 1 / -1;
             margin: 0 0 2px;
             text-align: center;
         }
@@ -275,7 +240,7 @@ def build_dashboard_snapshot(
         "upcoming_matches": upcoming,
         "all_records": all_records,
         "group_records": group_records,
-        "worst_teams": rank_worst_teams(group_records),
+        "worst_teams": rank_worst_teams(all_records),
         "people": people,
         "people_movements": movements,
         "movement_context": movement_context,
@@ -352,20 +317,11 @@ def knockout_match_rows(payload: Any) -> list[dict[str, Any]]:
     return matches
 
 
-def render_card(label: str, title: str, meta: str) -> None:
-    st.markdown(
-        f"""
-        <div class="sweep-card">
-            <div class="sweep-card__label">{html.escape(label)}</div>
-            <div class="sweep-card__title">{html.escape(title)}</div>
-            <div class="sweep-card__meta">{meta}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_knockout_bracket(matches: list[dict[str, Any]], draw: dict[str, list[str]]) -> None:
+def render_knockout_bracket(
+    matches: list[dict[str, Any]],
+    draw: dict[str, list[str]],
+    visible_stages: tuple[str, ...] = ("round_of_32",),
+) -> None:
     grouped = {stage: [] for stage in KNOCKOUT_STAGE_ORDER}
     for match in matches:
         stage_key = match.get("_stage_key")
@@ -374,6 +330,9 @@ def render_knockout_bracket(matches: list[dict[str, Any]], draw: dict[str, list[
 
     rounds = []
     for stage_key in KNOCKOUT_STAGE_ORDER:
+        if stage_key not in visible_stages:
+            continue
+
         stage_matches = grouped[stage_key]
         if not stage_matches:
             continue
@@ -464,21 +423,6 @@ def render_bracket_team(match: dict[str, Any], side: str, draw: dict[str, list[s
 def bracket_team_owner(team: str, draw: dict[str, list[str]]) -> str:
     owner_lookup = build_owner_lookup(draw)
     return owner_lookup.get(canonical_team_name(team), "")
-
-
-def format_worst_teams_meta(records: list[Any]) -> str:
-    rows = []
-    for index, record in enumerate(records[:3], start=1):
-        owner = html.escape(record.owner or "Unassigned")
-        team = html.escape(record.name)
-        rows.append(
-            "<div class=\"rank-line\">"
-            f"<span class=\"rank-line__team\">{index}. {team}</span> "
-            f"<span class=\"status-pill\">{owner}</span><br>"
-            f"{record.points} pts | GD {record.goal_difference:+d} | GF {record.goals_for}"
-            "</div>"
-        )
-    return "".join(rows)
 
 
 def people_dataframe(people: list[Any], movements: dict[str, str] | None = None) -> pd.DataFrame:
@@ -765,28 +709,9 @@ def main() -> None:
         current_match_window_hours,
     )
 
-    worst_teams = snapshot["worst_teams"][:3]
-    best_person = snapshot["people"][0] if snapshot["people"] else None
-
-    card_1, card_2 = st.columns(2)
-    with card_1:
-        if worst_teams:
-            render_card("Worst Team", "Bottom 3", format_worst_teams_meta(worst_teams))
-        else:
-            render_card("Worst Team", "No results yet", "Waiting for completed group-stage games")
-    with card_2:
-        if best_person:
-            meta = (
-                f"{best_person.points} pts | GD {best_person.goal_difference:+d} | "
-                f"GF {best_person.goals_for}<br>{html.escape(', '.join(best_person.teams))}"
-            )
-            render_card("Best Combined Record", best_person.name, meta)
-        else:
-            render_card("Best Combined Record", "No draw configured", "Add teams to config.yaml")
-
     knockout = snapshot["knockout_matches"]
     if knockout:
-        st.subheader("Knockout Bracket")
+        st.subheader("Round of 32")
         render_knockout_bracket(knockout, draw)
 
     st.subheader("People Leaderboard")
