@@ -258,11 +258,10 @@ def knockout_dataframe(
         )
         rows.append(
             {
-                "Match": int(match.get("matchNo") or 0),
                 "Home": bracket_team_label(match, "home", draw, matches_by_no),
-                "Score": bracket_score(match),
                 "Away": bracket_team_label(match, "away", draw, matches_by_no),
-                "Status": bracket_status(match),
+                "Score": bracket_score(match),
+                "Match": int(match.get("matchNo") or 0),
                 "Kickoff": kickoff_display,
             }
         )
@@ -399,6 +398,15 @@ def people_dataframe(people: list[Any], movements: dict[str, str] | None = None)
             }
         )
     return pd.DataFrame(rows)
+
+
+def highlight_leaderboard_winner(row: pd.Series) -> list[str]:
+    if row.get("Person") != "Jimmy":
+        return [""] * len(row)
+    return [
+        "background-color: #fff3bf; color: #111827; font-weight: 700;"
+        for _ in row
+    ]
 
 
 def parse_match_datetime(match: Any) -> datetime | None:
@@ -680,8 +688,9 @@ def main() -> None:
     if snapshot["movement_context"]:
         st.caption(snapshot["movement_context"])
     leaderboard_height = min(720, 42 + (len(snapshot["people"]) + 1) * 35)
+    people_df = people_dataframe(snapshot["people"], snapshot["people_movements"])
     st.dataframe(
-        people_dataframe(snapshot["people"], snapshot["people_movements"]),
+        people_df.style.apply(highlight_leaderboard_winner, axis=1),
         use_container_width=True,
         hide_index=True,
         height=leaderboard_height,
