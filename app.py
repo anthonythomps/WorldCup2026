@@ -90,6 +90,76 @@ def inject_css() -> None:
             color: #111827;
             font-weight: 750;
         }
+        .bracket-scroll {
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+        .bracket-grid {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(210px, 1fr));
+            gap: 12px;
+            min-width: 1320px;
+        }
+        .bracket-round {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .bracket-round__title {
+            color: #475569;
+            font-size: 0.86rem;
+            font-weight: 750;
+            margin: 0 0 2px;
+            text-align: center;
+        }
+        .bracket-match {
+            background: #ffffff;
+            border: 1px solid #d9e1ea;
+            border-radius: 8px;
+            padding: 9px;
+        }
+        .bracket-match__meta {
+            color: #52606d;
+            display: flex;
+            font-size: 0.76rem;
+            gap: 7px;
+            justify-content: space-between;
+            margin-bottom: 7px;
+            white-space: nowrap;
+        }
+        .bracket-team {
+            align-items: center;
+            border: 1px solid #e6ecf2;
+            border-radius: 6px;
+            display: flex;
+            gap: 6px;
+            justify-content: space-between;
+            min-height: 34px;
+            padding: 5px 7px;
+        }
+        .bracket-team + .bracket-team {
+            margin-top: 5px;
+        }
+        .bracket-team__name {
+            color: #111827;
+            font-size: 0.86rem;
+            font-weight: 700;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .bracket-team__owner {
+            color: #64748b;
+            font-size: 0.74rem;
+            font-weight: 600;
+        }
+        .bracket-team__score {
+            color: #111827;
+            font-size: 0.9rem;
+            font-weight: 800;
+            margin-left: auto;
+        }
         div[data-testid="stMetricValue"] {
             font-size: 1.45rem;
         }
@@ -192,6 +262,7 @@ def build_dashboard_snapshot(
     if standings_records and not any(record.played for record in all_records):
         all_records = standings_records
 
+    knockout = knockout_match_rows(matches_payload)
     current = current_matches(matches, current_match_window_hours)
     upcoming = upcoming_matches(matches, upcoming_fixture_days)
     people = rank_people(all_records, draw)
@@ -199,6 +270,7 @@ def build_dashboard_snapshot(
 
     return {
         "matches": matches,
+        "knockout_matches": knockout,
         "current_matches": current,
         "upcoming_matches": upcoming,
         "all_records": all_records,
@@ -214,6 +286,72 @@ def safe_json(payload: Any) -> str:
     return json.dumps(payload if payload is not None else {}, sort_keys=True, default=str)
 
 
+def extract_api_matches(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("matches", "fixtures", "data", "results", "items"):
+        if key in payload:
+            return extract_api_matches(payload[key])
+    return []
+
+
+KNOCKOUT_STAGE_LABELS = {
+    "round_of_32": "Round of 32",
+    "round_of_16": "Round of 16",
+    "quarter_final": "Quarter-final",
+    "semi_final": "Semi-final",
+    "final": "Final",
+    "third_place": "Third place",
+}
+
+KNOCKOUT_STAGE_ORDER = [
+    "round_of_32",
+    "round_of_16",
+    "quarter_final",
+    "semi_final",
+    "final",
+    "third_place",
+]
+
+KNOCKOUT_STAGE_ALIASES = {
+    "r32": "round_of_32",
+    "r16": "round_of_16",
+    "qf": "quarter_final",
+    "sf": "semi_final",
+    "thirdplace": "third_place",
+    "third_place": "third_place",
+    "final": "final",
+}
+
+
+def knockout_stage_key(match: dict[str, Any]) -> str | None:
+    raw_stage = str(match.get("stageNormalized") or match.get("stage") or "").strip()
+    normalized = raw_stage.casefold().replace("-", "_").replace(" ", "_")
+    normalized = KNOCKOUT_STAGE_ALIASES.get(normalized, normalized)
+    return normalized if normalized in KNOCKOUT_STAGE_LABELS else None
+
+
+def knockout_match_rows(payload: Any) -> list[dict[str, Any]]:
+    matches = []
+    for match in extract_api_matches(payload):
+        stage_key = knockout_stage_key(match)
+        if not stage_key:
+            continue
+        enriched = dict(match)
+        enriched["_stage_key"] = stage_key
+        matches.append(enriched)
+
+    matches.sort(
+        key=lambda item: (
+            KNOCKOUT_STAGE_ORDER.index(item["_stage_key"]),
+            int(item.get("matchNo") or 0),
+        )
+    )
+    return matches
+
+
 def render_card(label: str, title: str, meta: str) -> None:
     st.markdown(
         f"""
@@ -225,6 +363,107 @@ def render_card(label: str, title: str, meta: str) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+def render_knockout_bracket(matches: list[dict[str, Any]], draw: dict[str, list[str]]) -> None:
+    grouped = {stage: [] for stage in KNOCKOUT_STAGE_ORDER}
+    for match in matches:
+        stage_key = match.get("_stage_key")
+        if stage_key in grouped:
+            grouped[stage_key].append(match)
+
+    rounds = []
+    for stage_key in KNOCKOUT_STAGE_ORDER:
+        stage_matches = grouped[stage_key]
+        if not stage_matches:
+            continue
+
+        cards = "".join(render_bracket_match(match, draw) for match in stage_matches)
+        rounds.append(
+            "<section class=\"bracket-round\">"
+            f"<h4 class=\"bracket-round__title\">{html.escape(KNOCKOUT_STAGE_LABELS[stage_key])}</h4>"
+            f"{cards}"
+            "</section>"
+        )
+
+    if not rounds:
+        return
+
+    st.markdown(
+        "<div class=\"bracket-scroll\"><div class=\"bracket-grid\">"
+        + "".join(rounds)
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+
+def render_bracket_match(match: dict[str, Any], draw: dict[str, list[str]]) -> str:
+    kickoff = parse_raw_match_datetime(match)
+    kickoff_display = kickoff.astimezone().strftime("%d %b, %H:%M") if kickoff else ""
+    match_no = match.get("matchNo") or ""
+    status = bracket_status(match)
+    meta_parts = [
+        f"M{match_no}" if match_no else "",
+        kickoff_display,
+        status,
+    ]
+    meta = "".join(f"<span>{html.escape(part)}</span>" for part in meta_parts if part)
+    return (
+        "<article class=\"bracket-match\">"
+        f"<div class=\"bracket-match__meta\">{meta}</div>"
+        f"{render_bracket_team(match, 'home', draw)}"
+        f"{render_bracket_team(match, 'away', draw)}"
+        "</article>"
+    )
+
+
+def parse_raw_match_datetime(match: dict[str, Any]) -> datetime | None:
+    for key in ("kickoffUtc", "datetime", "utcDate", "date"):
+        value = match.get(key)
+        if not value or not isinstance(value, str):
+            continue
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    return None
+
+
+def bracket_status(match: dict[str, Any]) -> str:
+    status = str(match.get("status") or "").strip()
+    phase = str(match.get("livePhase") or "").strip()
+    if status and phase:
+        return f"{status.title()} {phase}"
+    return status.title() if status else ""
+
+
+def render_bracket_team(match: dict[str, Any], side: str, draw: dict[str, list[str]]) -> str:
+    team = match.get(f"{side}Team") or match.get(f"{side}Ref") or "TBD"
+    score = match.get(f"{side}Score")
+    owner = bracket_team_owner(str(team), draw) if match.get(f"{side}Team") else ""
+    owner_markup = f"<div class=\"bracket-team__owner\">{html.escape(owner)}</div>" if owner else ""
+    score_markup = (
+        f"<div class=\"bracket-team__score\">{html.escape(str(score))}</div>"
+        if score is not None
+        else ""
+    )
+    return (
+        "<div class=\"bracket-team\">"
+        "<div>"
+        f"<div class=\"bracket-team__name\">{html.escape(str(team))}</div>"
+        f"{owner_markup}"
+        "</div>"
+        f"{score_markup}"
+        "</div>"
+    )
+
+
+def bracket_team_owner(team: str, draw: dict[str, list[str]]) -> str:
+    owner_lookup = build_owner_lookup(draw)
+    return owner_lookup.get(canonical_team_name(team), "")
 
 
 def format_worst_teams_meta(records: list[Any]) -> str:
@@ -544,6 +783,11 @@ def main() -> None:
             render_card("Best Combined Record", best_person.name, meta)
         else:
             render_card("Best Combined Record", "No draw configured", "Add teams to config.yaml")
+
+    knockout = snapshot["knockout_matches"]
+    if knockout:
+        st.subheader("Knockout Bracket")
+        render_knockout_bracket(knockout, draw)
 
     st.subheader("People Leaderboard")
     if snapshot["movement_context"]:

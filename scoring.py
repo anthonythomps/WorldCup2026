@@ -7,8 +7,14 @@ from typing import Any
 from models import Match, PersonRecord, TeamRecord
 
 
+TEAM_NAME_ALIASES = {
+    "dr congo": "congo dr",
+}
+
+
 def canonical_team_name(value: str) -> str:
-    return " ".join(value.strip().casefold().split())
+    normalized = " ".join(value.strip().casefold().split())
+    return TEAM_NAME_ALIASES.get(normalized, normalized)
 
 
 def build_owner_lookup(draw: dict[str, list[str]]) -> dict[str, str]:

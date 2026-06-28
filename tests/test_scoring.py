@@ -1,7 +1,7 @@
 import unittest
 
 from models import Match
-from scoring import compute_team_records, rank_best_teams, rank_people, rank_worst_teams
+from scoring import canonical_team_name, compute_team_records, rank_best_teams, rank_people, rank_worst_teams
 
 
 class ScoringTests(unittest.TestCase):
@@ -52,6 +52,17 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(people[0].points, 7)
         self.assertEqual(people[1].name, "Alice")
         self.assertEqual(people[1].points, 4)
+
+    def test_dr_congo_alias_maps_to_congo_dr_owner(self):
+        draw = {"Daniel": ["Congo DR", "Uruguay", "Colombia", "Saudi Arabia"]}
+        matches = [Match("England", "DR Congo", 2, 1, stage="Round of 32")]
+
+        records = {
+            canonical_team_name(record.name): record
+            for record in compute_team_records(matches, draw)
+        }
+
+        self.assertEqual(records[canonical_team_name("DR Congo")].owner, "Daniel")
 
 
 if __name__ == "__main__":
