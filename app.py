@@ -242,6 +242,11 @@ def knockout_dataframe(
     visible_stages: tuple[str, ...] = ("round_of_32",),
 ) -> pd.DataFrame:
     rows = []
+    matches_by_no = {
+        int(match.get("matchNo")): match
+        for match in matches
+        if match.get("matchNo") not in (None, "")
+    }
     for match in matches:
         stage_key = str(match.get("_stage_key") or "")
         if stage_key not in visible_stages:
@@ -254,9 +259,9 @@ def knockout_dataframe(
         rows.append(
             {
                 "Match": int(match.get("matchNo") or 0),
-                "Home": bracket_team_label(match, "home", draw),
+                "Home": bracket_team_label(match, "home", draw, matches_by_no),
                 "Score": bracket_score(match),
-                "Away": bracket_team_label(match, "away", draw),
+                "Away": bracket_team_label(match, "away", draw, matches_by_no),
                 "Status": bracket_status(match),
                 "Kickoff": kickoff_display,
             }
@@ -287,10 +292,80 @@ def bracket_status(match: dict[str, Any]) -> str:
     return status.title() if status else ""
 
 
-def bracket_team_label(match: dict[str, Any], side: str, draw: dict[str, list[str]]) -> str:
-    team = match.get(f"{side}Team") or match.get(f"{side}Ref") or "TBD"
-    owner = bracket_team_owner(str(team), draw) if match.get(f"{side}Team") else ""
+def bracket_team_label(
+    match: dict[str, Any],
+    side: str,
+    draw: dict[str, list[str]],
+    matches_by_no: dict[int, dict[str, Any]],
+) -> str:
+    team = match.get(f"{side}Team")
+    if not team:
+        return bracket_reference_label(str(match.get(f"{side}Ref") or "TBD"), draw, matches_by_no)
+
+    owner = bracket_team_owner(str(team), draw)
     return f"{team} ({owner})" if owner else str(team)
+
+
+def bracket_reference_label(
+    reference: str,
+    draw: dict[str, list[str]],
+    matches_by_no: dict[int, dict[str, Any]],
+) -> str:
+    if len(reference) < 2 or reference[0].upper() not in {"W", "L"} or not reference[1:].isdigit():
+        return reference
+
+    source_match_no = int(reference[1:])
+    source_match = matches_by_no.get(source_match_no)
+    resolved_team = resolve_match_reference(reference[0].upper(), source_match)
+    if resolved_team:
+        owner = bracket_team_owner(resolved_team, draw)
+        return f"{resolved_team} ({owner})" if owner else resolved_team
+
+    prefix = "Winner" if reference[0].upper() == "W" else "Loser"
+    return f"{prefix} of M{source_match_no}"
+
+
+def resolve_match_reference(kind: str, match: dict[str, Any] | None) -> str | None:
+    if not match:
+        return None
+
+    result = match.get("result")
+    if isinstance(result, dict):
+        for key in ("winner", "winnerTeam", "winner_team"):
+            winner = result.get(key)
+            if isinstance(winner, str) and winner.strip():
+                return winner.strip() if kind == "W" else loser_for_winner(match, winner.strip())
+
+    home_team = match.get("homeTeam")
+    away_team = match.get("awayTeam")
+    home_score = match.get("homeScore")
+    away_score = match.get("awayScore")
+    status = str(match.get("status") or "").strip().lower()
+
+    if not home_team or not away_team:
+        return None
+    if home_score is None or away_score is None:
+        return None
+    if status in {"live", "in progress", "in_progress", "1h", "2h", "ht", "half-time"}:
+        return None
+    if home_score == away_score:
+        return None
+
+    home_won = home_score > away_score
+    if kind == "W":
+        return str(home_team if home_won else away_team)
+    return str(away_team if home_won else home_team)
+
+
+def loser_for_winner(match: dict[str, Any], winner: str) -> str | None:
+    home_team = str(match.get("homeTeam") or "")
+    away_team = str(match.get("awayTeam") or "")
+    winner_key = canonical_team_name(winner)
+    if canonical_team_name(home_team) == winner_key:
+        return away_team or None
+    if canonical_team_name(away_team) == winner_key:
+        return home_team or None
+    return None
 
 
 def bracket_score(match: dict[str, Any]) -> str:
@@ -594,6 +669,12 @@ def main() -> None:
     if knockout:
         st.subheader("Round of 32")
         st.dataframe(knockout_dataframe(knockout, draw), use_container_width=True, hide_index=True)
+        st.subheader("Round of 16")
+        st.dataframe(
+            knockout_dataframe(knockout, draw, visible_stages=("round_of_16",)),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     st.subheader("People Leaderboard")
     if snapshot["movement_context"]:
