@@ -254,11 +254,11 @@ def knockout_dataframe(
         rows.append(
             {
                 "Match": int(match.get("matchNo") or 0),
-                "Kickoff": kickoff_display,
                 "Home": bracket_team_label(match, "home", draw),
                 "Score": bracket_score(match),
                 "Away": bracket_team_label(match, "away", draw),
                 "Status": bracket_status(match),
+                "Kickoff": kickoff_display,
             }
         )
     return pd.DataFrame(rows).sort_values("Match") if rows else pd.DataFrame()
