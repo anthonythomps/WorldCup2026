@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -44,86 +43,6 @@ def inject_css() -> None:
         .block-container {
             padding-top: 1.4rem;
             padding-bottom: 2rem;
-        }
-        .status-pill {
-            display: inline-block;
-            border: 1px solid #d5dde5;
-            border-radius: 999px;
-            padding: 2px 9px;
-            color: #334155;
-            background: #f8fafc;
-            font-size: 0.82rem;
-        }
-        .bracket-scroll {
-            overflow-x: auto;
-            padding-bottom: 8px;
-        }
-        .bracket-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 12px;
-            min-width: 720px;
-        }
-        .bracket-round {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 10px;
-        }
-        .bracket-round__title {
-            color: #475569;
-            font-size: 0.86rem;
-            font-weight: 750;
-            grid-column: 1 / -1;
-            margin: 0 0 2px;
-            text-align: center;
-        }
-        .bracket-match {
-            background: #ffffff;
-            border: 1px solid #d9e1ea;
-            border-radius: 8px;
-            padding: 9px;
-        }
-        .bracket-match__meta {
-            color: #52606d;
-            display: flex;
-            font-size: 0.76rem;
-            gap: 7px;
-            justify-content: space-between;
-            margin-bottom: 7px;
-            white-space: nowrap;
-        }
-        .bracket-team {
-            align-items: center;
-            border: 1px solid #e6ecf2;
-            border-radius: 6px;
-            display: flex;
-            gap: 6px;
-            justify-content: space-between;
-            min-height: 34px;
-            padding: 5px 7px;
-        }
-        .bracket-team + .bracket-team {
-            margin-top: 5px;
-        }
-        .bracket-team__name {
-            color: #111827;
-            font-size: 0.86rem;
-            font-weight: 700;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .bracket-team__owner {
-            color: #64748b;
-            font-size: 0.74rem;
-            font-weight: 600;
-        }
-        .bracket-team__score {
-            color: #111827;
-            font-size: 0.9rem;
-            font-weight: 800;
-            margin-left: auto;
         }
         div[data-testid="stMetricValue"] {
             font-size: 1.45rem;
@@ -317,63 +236,32 @@ def knockout_match_rows(payload: Any) -> list[dict[str, Any]]:
     return matches
 
 
-def render_knockout_bracket(
+def knockout_dataframe(
     matches: list[dict[str, Any]],
     draw: dict[str, list[str]],
     visible_stages: tuple[str, ...] = ("round_of_32",),
-) -> None:
-    grouped = {stage: [] for stage in KNOCKOUT_STAGE_ORDER}
+) -> pd.DataFrame:
+    rows = []
     for match in matches:
-        stage_key = match.get("_stage_key")
-        if stage_key in grouped:
-            grouped[stage_key].append(match)
-
-    rounds = []
-    for stage_key in KNOCKOUT_STAGE_ORDER:
+        stage_key = str(match.get("_stage_key") or "")
         if stage_key not in visible_stages:
             continue
 
-        stage_matches = grouped[stage_key]
-        if not stage_matches:
-            continue
-
-        cards = "".join(render_bracket_match(match, draw) for match in stage_matches)
-        rounds.append(
-            "<section class=\"bracket-round\">"
-            f"<h4 class=\"bracket-round__title\">{html.escape(KNOCKOUT_STAGE_LABELS[stage_key])}</h4>"
-            f"{cards}"
-            "</section>"
+        kickoff = parse_raw_match_datetime(match)
+        kickoff_display = (
+            kickoff.astimezone().strftime("%a %d %b, %H:%M %Z") if kickoff else ""
         )
-
-    if not rounds:
-        return
-
-    st.markdown(
-        "<div class=\"bracket-scroll\"><div class=\"bracket-grid\">"
-        + "".join(rounds)
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
-
-
-def render_bracket_match(match: dict[str, Any], draw: dict[str, list[str]]) -> str:
-    kickoff = parse_raw_match_datetime(match)
-    kickoff_display = kickoff.astimezone().strftime("%d %b, %H:%M") if kickoff else ""
-    match_no = match.get("matchNo") or ""
-    status = bracket_status(match)
-    meta_parts = [
-        f"M{match_no}" if match_no else "",
-        kickoff_display,
-        status,
-    ]
-    meta = "".join(f"<span>{html.escape(part)}</span>" for part in meta_parts if part)
-    return (
-        "<article class=\"bracket-match\">"
-        f"<div class=\"bracket-match__meta\">{meta}</div>"
-        f"{render_bracket_team(match, 'home', draw)}"
-        f"{render_bracket_team(match, 'away', draw)}"
-        "</article>"
-    )
+        rows.append(
+            {
+                "Match": int(match.get("matchNo") or 0),
+                "Kickoff": kickoff_display,
+                "Home": bracket_team_label(match, "home", draw),
+                "Score": bracket_score(match),
+                "Away": bracket_team_label(match, "away", draw),
+                "Status": bracket_status(match),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("Match") if rows else pd.DataFrame()
 
 
 def parse_raw_match_datetime(match: dict[str, Any]) -> datetime | None:
@@ -399,25 +287,18 @@ def bracket_status(match: dict[str, Any]) -> str:
     return status.title() if status else ""
 
 
-def render_bracket_team(match: dict[str, Any], side: str, draw: dict[str, list[str]]) -> str:
+def bracket_team_label(match: dict[str, Any], side: str, draw: dict[str, list[str]]) -> str:
     team = match.get(f"{side}Team") or match.get(f"{side}Ref") or "TBD"
-    score = match.get(f"{side}Score")
     owner = bracket_team_owner(str(team), draw) if match.get(f"{side}Team") else ""
-    owner_markup = f"<div class=\"bracket-team__owner\">{html.escape(owner)}</div>" if owner else ""
-    score_markup = (
-        f"<div class=\"bracket-team__score\">{html.escape(str(score))}</div>"
-        if score is not None
-        else ""
-    )
-    return (
-        "<div class=\"bracket-team\">"
-        "<div>"
-        f"<div class=\"bracket-team__name\">{html.escape(str(team))}</div>"
-        f"{owner_markup}"
-        "</div>"
-        f"{score_markup}"
-        "</div>"
-    )
+    return f"{team} ({owner})" if owner else str(team)
+
+
+def bracket_score(match: dict[str, Any]) -> str:
+    home_score = match.get("homeScore")
+    away_score = match.get("awayScore")
+    if home_score is None or away_score is None:
+        return ""
+    return f"{home_score}-{away_score}"
 
 
 def bracket_team_owner(team: str, draw: dict[str, list[str]]) -> str:
@@ -712,7 +593,7 @@ def main() -> None:
     knockout = snapshot["knockout_matches"]
     if knockout:
         st.subheader("Round of 32")
-        render_knockout_bracket(knockout, draw)
+        st.dataframe(knockout_dataframe(knockout, draw), use_container_width=True, hide_index=True)
 
     st.subheader("People Leaderboard")
     if snapshot["movement_context"]:
