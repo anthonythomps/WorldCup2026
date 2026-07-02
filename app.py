@@ -348,9 +348,17 @@ def resolve_match_reference(kind: str, match: dict[str, Any] | None) -> str | No
     if status in {"live", "in progress", "in_progress", "1h", "2h", "ht", "half-time"}:
         return None
     if home_score == away_score:
-        return None
+        penalties = match.get("penalties")
+        if not isinstance(penalties, dict):
+            return None
+        home_penalties = penalties.get("home")
+        away_penalties = penalties.get("away")
+        if home_penalties is None or away_penalties is None or home_penalties == away_penalties:
+            return None
+        home_won = home_penalties > away_penalties
+    else:
+        home_won = home_score > away_score
 
-    home_won = home_score > away_score
     if kind == "W":
         return str(home_team if home_won else away_team)
     return str(away_team if home_won else home_team)
@@ -372,7 +380,14 @@ def bracket_score(match: dict[str, Any]) -> str:
     away_score = match.get("awayScore")
     if home_score is None or away_score is None:
         return ""
-    return f"{home_score}-{away_score}"
+    score = f"{home_score}-{away_score}"
+    penalties = match.get("penalties")
+    if isinstance(penalties, dict):
+        home_penalties = penalties.get("home")
+        away_penalties = penalties.get("away")
+        if home_penalties is not None and away_penalties is not None:
+            return f"{score} ({home_penalties}-{away_penalties} pens)"
+    return score
 
 
 def bracket_team_owner(team: str, draw: dict[str, list[str]]) -> str:
