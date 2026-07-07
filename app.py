@@ -690,11 +690,15 @@ def main() -> None:
 
     knockout = snapshot["knockout_matches"]
     if knockout:
-        st.subheader("Round of 32")
-        st.dataframe(knockout_dataframe(knockout, draw), use_container_width=True, hide_index=True)
         st.subheader("Round of 16")
         st.dataframe(
             knockout_dataframe(knockout, draw, visible_stages=("round_of_16",)),
+            use_container_width=True,
+            hide_index=True,
+        )
+        st.subheader("Quarter-finals")
+        st.dataframe(
+            knockout_dataframe(knockout, draw, visible_stages=("quarter_final",)),
             use_container_width=True,
             hide_index=True,
         )
